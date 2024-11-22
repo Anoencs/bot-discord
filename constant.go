@@ -18,6 +18,7 @@ var commonCryptos = map[string]CryptoInfo{
 	"avalanche-2":   {Symbol: "AVAX", GeckoID: "avalanche-2"},
 	"worldcoin-wld": {Symbol: "WLD", GeckoID: "worldcoin-wld"},
 	"avail":         {Symbol: "AVAIL", GeckoID: "avail"},
+	"strk":          {Symbol: "STRK", GeckoID: "starknet"},
 	// Additional top cryptocurrencies
 	"tron":                      {Symbol: "TRX", GeckoID: "tron"},
 	"chainlink":                 {Symbol: "LINK", GeckoID: "chainlink"},
@@ -185,6 +186,7 @@ var convertToBinanceSymbolMap = map[string]string{
 	"the-sandbox":      "SANDUSDT",
 	"decentraland":     "MANAUSDT",
 	"theta-token":      "THETAUSDT",
+	"strk":             "STRKUSDT",
 }
 
 var convertToCMCSymbolMap = map[string]string{
@@ -217,4 +219,5 @@ var convertToCMCSymbolMap = map[string]string{
 	"decentraland":     "decentraland",
 	"theta-token":      "theta",
 	"avail":            "avail",
+	"strk":             "strk",
 }
