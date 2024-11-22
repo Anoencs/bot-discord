@@ -73,32 +73,6 @@ func init() {
 	}
 }
 
-// func init() {
-// 	if err := godotenv.Load(); err != nil {
-// 		log.Fatal("Error loading .env file")
-// 	}
-// 	if err := loadInvestments(); err != nil {
-// 		log.Printf("Error loading investments: %v", err)
-// 	}
-// 	tokenPool = strings.Split(os.Getenv("BOT_TOKENS"), ",")
-// 	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
-// 	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
-// 	COINMARKETCAP_API_KEY = os.Getenv("COINMARKETCAP_API_KEY")
-// 	SANTIMENT_API_KEY = os.Getenv("SANTIMENT_API_KEY")
-//
-// 	if len(tokens) != len(clientIDs) {
-// 		log.Fatal("Number of tokens and client IDs must match")
-// 	}
-//
-// 	for i := range tokens {
-// 		botConfigs = append(botConfigs, BotConfig{
-// 			Token:    strings.TrimSpace(tokens[i]),
-// 			ClientID: strings.TrimSpace(clientIDs[i]),
-// 		})
-// 	}
-//
-// }
-
 func main() {
 	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
 	if err != nil {
@@ -180,6 +154,14 @@ func registerCommands(s *discordgo.Session) {
 		{
 			Name:        "invite",
 			Description: "Get invite links for available price bots",
+		},
+		{
+			Name:        "restart",
+			Description: "Restart all price bots",
+		},
+		{
+			Name:        "clear",
+			Description: "Remove all price bots",
 		},
 		{
 			Name:        "setalert",
@@ -310,6 +292,10 @@ func handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			handleAssetsCommand(s, i)
 		case "removeinvest":
 			handleRemoveInvestCommand(s, i)
+		case "restart-bot":
+			handleRestartCommand(s, i)
+		case "clear-bot":
+			handleClearCommand(s, i)
 		}
 
 	case discordgo.InteractionApplicationCommandAutocomplete:

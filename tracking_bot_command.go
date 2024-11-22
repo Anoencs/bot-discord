@@ -9,6 +9,132 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+func RestartAllBots() error {
+	botsMutex.Lock()
+	defer botsMutex.Unlock()
+
+	log.Println("Starting bot restart process...")
+
+	// Store existing bot configurations
+	botConfigs := make(map[string]PriceBot)
+	for key, bot := range priceBots {
+		botConfigs[key] = PriceBot{
+			Token:      bot.Token,
+			Symbol:     bot.Symbol,
+			GuildID:    bot.GuildID,
+			LastPrice:  bot.LastPrice,
+			LastUpdate: bot.LastUpdate,
+		}
+		if err := bot.Session.Close(); err != nil {
+			log.Printf("Error closing session for bot %s: %v", bot.Symbol, err)
+		}
+	}
+
+	// Clear current bots
+	priceBots = make(map[string]*PriceBot)
+
+	// Recreate bots with saved configurations
+	for key, config := range botConfigs {
+		session, err := discordgo.New("Bot " + config.Token)
+		if err != nil {
+			log.Printf("Error creating new session for %s: %v", config.Symbol, err)
+			continue
+		}
+
+		// Initialize the new bot session
+		if err := session.Open(); err != nil {
+			log.Printf("Error opening new session for %s: %v", config.Symbol, err)
+			session.Close()
+			continue
+		}
+
+		priceBots[key] = &PriceBot{
+			Session:    session,
+			Token:      config.Token,
+			Symbol:     config.Symbol,
+			GuildID:    config.GuildID,
+			LastPrice:  config.LastPrice,
+			LastUpdate: config.LastUpdate,
+		}
+
+		// Allow some time between bot restarts to prevent rate limiting
+		time.Sleep(time.Second * 2)
+	}
+
+	log.Printf("Bot restart completed. %d bots restarted", len(priceBots))
+	return nil
+}
+
+// ClearAllBots removes all bots and returns their tokens to the pool
+func ClearAllBots() error {
+	botsMutex.Lock()
+	defer botsMutex.Unlock()
+
+	log.Println("Starting bot cleanup process...")
+
+	for _, bot := range priceBots {
+		if bot.Session != nil {
+			// Attempt to reset nickname before closing
+			err := bot.Session.GuildMemberNickname(bot.GuildID, "@me", "")
+			if err != nil {
+				log.Printf("Error resetting nickname for bot %s: %v", bot.Symbol, err)
+			}
+
+			// Close the session
+			if err := bot.Session.Close(); err != nil {
+				log.Printf("Error closing session for bot %s: %v", bot.Symbol, err)
+			}
+		}
+
+		// Return token to pool
+		tokenPool = append(tokenPool, bot.Token)
+	}
+
+	// Clear the price bots map
+	priceBots = make(map[string]*PriceBot)
+
+	log.Println("All bots have been cleared and tokens returned to pool")
+	return nil
+}
+
+func handleRestartCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	err := RestartAllBots()
+
+	var response string
+	if err != nil {
+		response = fmt.Sprintf("❌ Error restarting bots: %v", err)
+	} else {
+		response = "✅ Successfully restarted all price bots"
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &response,
+	})
+}
+
+func handleClearCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+	})
+
+	err := ClearAllBots()
+
+	var response string
+	if err != nil {
+		response = fmt.Sprintf("❌ Error clearing bots: %v", err)
+	} else {
+		response = "✅ Successfully cleared all price bots"
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &response,
+	})
+}
+
 func handleAddCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	options := i.ApplicationCommandData().Options
 	symbol := strings.ToLower(options[0].StringValue())
