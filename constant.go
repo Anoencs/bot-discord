@@ -18,7 +18,7 @@ var commonCryptos = map[string]CryptoInfo{
 	"avalanche-2":   {Symbol: "AVAX", GeckoID: "avalanche-2"},
 	"worldcoin-wld": {Symbol: "WLD", GeckoID: "worldcoin-wld"},
 	"avail":         {Symbol: "AVAIL", GeckoID: "avail"},
-	"strk":          {Symbol: "STRK", GeckoID: "starknet"},
+	"starknet":      {Symbol: "STRK", GeckoID: "starknet"},
 	// Additional top cryptocurrencies
 	"tron":                      {Symbol: "TRX", GeckoID: "tron"},
 	"chainlink":                 {Symbol: "LINK", GeckoID: "chainlink"},
