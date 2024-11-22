@@ -156,11 +156,11 @@ func registerCommands(s *discordgo.Session) {
 			Description: "Get invite links for available price bots",
 		},
 		{
-			Name:        "restart",
+			Name:        "restart-bot",
 			Description: "Restart all price bots",
 		},
 		{
-			Name:        "clear",
+			Name:        "clear-bot",
 			Description: "Remove all price bots",
 		},
 		{
