@@ -3,15 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
-)
-
-// Add these constants for API keys
-const (
-	COINMARKETCAP_API_KEY = "22a271f5-b3ea-49af-8531-573675f15b23"
-	COINAPI_API_KEY       = "your_coinapi_api_key"
+	"time"
 )
 
 // CoinMarketCap response structure
@@ -179,39 +175,234 @@ func getCryptoPrice(id string) (*CryptoPrice, error) {
 	// If all APIs fail, return the original error
 	return nil, err
 }
-func formatNickname(symbol string, price float64) string {
-	cryptoInfo, exists := commonCryptos[symbol]
-	if !exists {
-		return fmt.Sprintf("%s $%.2f", strings.ToUpper(symbol), price)
+func getSantimentData(symbol string) (string, error) {
+	apiURL := "https://api.santiment.net/graphql"
+
+	// GraphQL query to fetch sentiment data
+	query := fmt.Sprintf(`{
+		"query": "query { 
+			getMetric(metric: \"sentiment_positive\") { 
+				timeseriesData(
+					slug: \"%s\", 
+					from: \"%s\", 
+					to: \"%s\", 
+					interval: \"1d\"
+				) { 
+					datetime 
+					value 
+				} 
+			} 
+		}"
+	}`, symbol, time.Now().Add(-24*time.Hour).Format("2006-01-02T15:04:05Z"), time.Now().Format("2006-01-02T15:04:05Z"))
+
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(query))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if cryptoInfo.Symbol == "BTC" {
-		return fmt.Sprintf("BTC $%.0f", price)
+	// Add necessary headers
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", SANTIMENT_API_KEY))
+	req.Header.Add("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
-	return fmt.Sprintf("%s $%.2f", cryptoInfo.Symbol, price)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("non-200 response from API: %d", resp.StatusCode)
+	}
+
+	// Read and parse the response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Define a structure to parse response JSON
+	type TimeseriesData struct {
+		Datetime string  `json:"datetime"`
+		Value    float64 `json:"value"`
+	}
+	type MetricData struct {
+		TimeseriesData []TimeseriesData `json:"timeseriesData"`
+	}
+	type ResponseData struct {
+		GetMetric MetricData `json:"getMetric"`
+	}
+	type APIResponse struct {
+		Data ResponseData `json:"data"`
+	}
+
+	var apiResponse APIResponse
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Analyze sentiment data
+	if len(apiResponse.Data.GetMetric.TimeseriesData) == 0 {
+		return "No sentiment data available", nil
+	}
+
+	// Aggregate sentiment values
+	var totalSentiment float64
+	for _, data := range apiResponse.Data.GetMetric.TimeseriesData {
+		totalSentiment += data.Value
+	}
+	averageSentiment := totalSentiment / float64(len(apiResponse.Data.GetMetric.TimeseriesData))
+
+	// Classify sentiment
+	switch {
+	case averageSentiment > 0.75:
+		return "Very Positive 🟢", nil
+	case averageSentiment > 0.5:
+		return "Positive ✅", nil
+	case averageSentiment > 0.25:
+		return "Neutral 🟡", nil
+	case averageSentiment > 0:
+		return "Negative 🔴", nil
+	default:
+		return "Very Negative ⚠️", nil
+	}
 }
+func getSantimentDataForGreedFear(symbol string) (string, error) {
+	apiURL := "https://api.santiment.net/graphql"
 
-func formatPrice(symbol string, price float64) string {
-	cryptoInfo, exists := commonCryptos[symbol]
-	if !exists {
-		return fmt.Sprintf("$%.2f", price)
+	// GraphQL query for sentiment and activity data
+	query := fmt.Sprintf(`{
+		"query": "query { 
+			getMetric(metric: \"sentiment_positive\") { 
+				timeseriesData(
+					slug: \"%s\", 
+					from: \"%s\", 
+					to: \"%s\", 
+					interval: \"1d\"
+				) { 
+					datetime 
+					value 
+				} 
+			}
+			getMetric(metric: \"sentiment_negative\") { 
+				timeseriesData(
+					slug: \"%s\", 
+					from: \"%s\", 
+					to: \"%s\", 
+					interval: \"1d\"
+				) { 
+					datetime 
+					value 
+				} 
+			}
+			getMetric(metric: \"social_volume_total\") { 
+				timeseriesData(
+					slug: \"%s\", 
+					from: \"%s\", 
+					to: \"%s\", 
+					interval: \"1d\"
+				) { 
+					datetime 
+					value 
+				} 
+			}
+		}"
+	}`, symbol, time.Now().Add(-24*time.Hour).Format("2006-01-02T15:04:05Z"), time.Now().Format("2006-01-02T15:04:05Z"), symbol, time.Now().Add(-24*time.Hour).Format("2006-01-02T15:04:05Z"), time.Now().Format("2006-01-02T15:04:05Z"), symbol, time.Now().Add(-24*time.Hour).Format("2006-01-02T15:04:05Z"), time.Now().Format("2006-01-02T15:04:05Z"))
+
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(query))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if cryptoInfo.Symbol == "BTC" {
-		return fmt.Sprintf("$%.0f", price)
-	}
-	return fmt.Sprintf("$%.2f", price)
-}
-func getColorForChange(change float64) int {
-	if change > 0 {
-		return 0x00ff00 // Green
-	}
-	return 0xff0000 // Red
-}
+	// Add necessary headers
+	req.Header.Add("Authorization", "Bearer YOUR_API_KEY")
+	req.Header.Add("Content-Type", "application/json")
 
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute request: %w", err)
 	}
-	return x
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("non-200 response from API: %d", resp.StatusCode)
+	}
+
+	// Read and parse the response
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var apiResponse struct {
+		Data struct {
+			GetMetricPositive struct {
+				TimeseriesData []struct {
+					Datetime string  `json:"datetime"`
+					Value    float64 `json:"value"`
+				} `json:"timeseriesData"`
+			} `json:"getMetric"`
+			GetMetricNegative struct {
+				TimeseriesData []struct {
+					Datetime string  `json:"datetime"`
+					Value    float64 `json:"value"`
+				} `json:"timeseriesData"`
+			} `json:"getMetric"`
+			GetMetricVolume struct {
+				TimeseriesData []struct {
+					Datetime string  `json:"datetime"`
+					Value    float64 `json:"value"`
+				} `json:"timeseriesData"`
+			} `json:"getMetric"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// Aggregating data
+	var totalPositive, totalNegative, totalVolume float64
+	var countPositive, countNegative, countVolume int
+
+	for _, data := range apiResponse.Data.GetMetricPositive.TimeseriesData {
+		totalPositive += data.Value
+		countPositive++
+	}
+	for _, data := range apiResponse.Data.GetMetricNegative.TimeseriesData {
+		totalNegative += data.Value
+		countNegative++
+	}
+	for _, data := range apiResponse.Data.GetMetricVolume.TimeseriesData {
+		totalVolume += data.Value
+		countVolume++
+	}
+
+	if countPositive == 0 || countNegative == 0 || countVolume == 0 {
+		return "Insufficient data for Greed and Fear Index", nil
+	}
+
+	// Calculate average values
+	avgPositive := totalPositive / float64(countPositive)
+	avgNegative := totalNegative / float64(countNegative)
+	avgVolume := totalVolume / float64(countVolume)
+
+	// Compute Greed-Fear Index (simplified)
+	greedScore := avgPositive + (avgVolume / 10)
+	fearScore := avgNegative - (avgVolume / 10)
+
+	// Classify index
+	switch {
+	case greedScore > fearScore*1.5:
+		return "Market sentiment: Extreme Greed üü¢", nil
+	case greedScore > fearScore:
+		return "Market sentiment: Greed ‚úÖ", nil
+	case fearScore > greedScore*1.5:
+		return "Market sentiment: Extreme Fear üî¥", nil
+	case fearScore > greedScore:
+		return "Market sentiment: Fear ‚ö†Ô∏è", nil
+	default:
+		return "Market sentiment: Neutral üü°", nil
+	}
 }

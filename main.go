@@ -37,6 +37,11 @@ var (
 	tokenPool []string
 )
 
+var (
+	COINMARKETCAP_API_KEY string
+	SANTIMENT_API_KEY     string
+)
+
 func init() {
 	if err := godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file")
@@ -45,9 +50,10 @@ func init() {
 		log.Printf("Error loading investments: %v", err)
 	}
 	tokenPool = strings.Split(os.Getenv("BOT_TOKENS"), ",")
-	// Load bot configurations from environment
 	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
 	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
+	COINMARKETCAP_API_KEY = os.Getenv("COINMARKETCAP_API_KEY")
+	SANTIMENT_API_KEY = os.Getenv("SANTIMENT_API_KEY")
 
 	if len(tokens) != len(clientIDs) {
 		log.Fatal("Number of tokens and client IDs must match")

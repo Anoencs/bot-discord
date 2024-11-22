@@ -32,6 +32,11 @@ func handlePriceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
+	sentiment, err := getSantimentDataForGreedFear("bitcoin")
+	if err != nil {
+		sentiment = "Data not available"
+	}
+
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("%s Price Info", cryptoInfo.Symbol),
 		Color: 0x00ff00,
@@ -55,6 +60,11 @@ func handlePriceCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				Name:   "📉 24h Volume",
 				Value:  fmt.Sprintf("$%.2fM", price.Volume24h/1000000),
 				Inline: true,
+			},
+			{
+				Name:   "🌟 Market Sentiment",
+				Value:  sentiment,
+				Inline: false,
 			},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
