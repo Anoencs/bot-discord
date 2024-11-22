@@ -43,13 +43,19 @@ var (
 )
 
 func init() {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
+	// In production (Railway), env vars are already set in the environment
+	// Only try to load .env file during local development
+	if os.Getenv("RAILWAY_ENVIRONMENT") == "" {
+		if err := godotenv.Load(); err != nil {
+			log.Printf("Warning: Error loading .env file (this is normal in production): %v", err)
+		}
 	}
+
 	if err := loadInvestments(); err != nil {
 		log.Printf("Error loading investments: %v", err)
 	}
-	tokenPool = strings.Split(os.Getenv("BOT_TOKENS"), ",")
+
+	// Get environment variables directly
 	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
 	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
 	COINMARKETCAP_API_KEY = os.Getenv("COINMARKETCAP_API_KEY")
@@ -65,8 +71,33 @@ func init() {
 			ClientID: strings.TrimSpace(clientIDs[i]),
 		})
 	}
-
 }
+
+// func init() {
+// 	if err := godotenv.Load(); err != nil {
+// 		log.Fatal("Error loading .env file")
+// 	}
+// 	if err := loadInvestments(); err != nil {
+// 		log.Printf("Error loading investments: %v", err)
+// 	}
+// 	tokenPool = strings.Split(os.Getenv("BOT_TOKENS"), ",")
+// 	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
+// 	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
+// 	COINMARKETCAP_API_KEY = os.Getenv("COINMARKETCAP_API_KEY")
+// 	SANTIMENT_API_KEY = os.Getenv("SANTIMENT_API_KEY")
+//
+// 	if len(tokens) != len(clientIDs) {
+// 		log.Fatal("Number of tokens and client IDs must match")
+// 	}
+//
+// 	for i := range tokens {
+// 		botConfigs = append(botConfigs, BotConfig{
+// 			Token:    strings.TrimSpace(tokens[i]),
+// 			ClientID: strings.TrimSpace(clientIDs[i]),
+// 		})
+// 	}
+//
+// }
 
 func main() {
 	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
