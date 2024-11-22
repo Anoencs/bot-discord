@@ -3,11 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/joho/godotenv"
 )
 
 // Add these new types and variables at the top of your file
@@ -21,28 +19,6 @@ var (
 	botConfigs []BotConfig
 )
 
-// Update your init() function
-func init() {
-	if err := godotenv.Load(); err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
-	// Load bot configurations from environment
-	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
-	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
-
-	if len(tokens) != len(clientIDs) {
-		log.Fatal("Number of tokens and client IDs must match")
-	}
-
-	for i := range tokens {
-		botConfigs = append(botConfigs, BotConfig{
-			Token:    strings.TrimSpace(tokens[i]),
-			ClientID: strings.TrimSpace(clientIDs[i]),
-		})
-	}
-}
-
 // Add the generate invite URL function
 func generateBotInviteURL(clientID string) string {
 	permissions := 67584 // Nickname + View Channels + Send Messages
@@ -51,7 +27,33 @@ func generateBotInviteURL(clientID string) string {
 		permissions)
 }
 
-// Add a command to show invite URLs
+func retryNicknameUpdate(s *discordgo.Session, guildID, nickname string) error {
+	maxRetries := 5
+	var lastErr error
+
+	for retry := 0; retry < maxRetries; retry++ {
+		if err := s.GuildMemberNickname(guildID, "@me", nickname); err != nil {
+			lastErr = err
+			log.Printf("Retry %d/%d: Error setting nickname: %v", retry+1, maxRetries, err)
+			time.Sleep(time.Second * 2)
+			continue
+		}
+		return nil
+	}
+	return lastErr
+}
+
+func updateBotNickname(bot *PriceBot, price float64) {
+	nickname := formatNickname(bot.Symbol, price)
+	err := bot.Session.GuildMemberNickname(bot.GuildID, "@me", nickname)
+	if err != nil {
+		log.Printf("Error updating nickname for %s: %v", bot.Symbol, err)
+	} else {
+		bot.LastPrice = price
+		bot.LastUpdate = time.Now()
+	}
+}
+
 func handleInviteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	botsMutex.RLock()
 	defer botsMutex.RUnlock()
@@ -104,4 +106,14 @@ func handleInviteCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			Flags:  discordgo.MessageFlagsEphemeral, // Only visible to command user
 		},
 	})
+}
+
+func cleanupBots() {
+	botsMutex.Lock()
+	defer botsMutex.Unlock()
+
+	for _, bot := range priceBots {
+		bot.Session.Close()
+		tokenPool = append(tokenPool, bot.Token)
+	}
 }
