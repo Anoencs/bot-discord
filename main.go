@@ -51,8 +51,9 @@ func init() {
 		}
 	}
 
-	if err := loadInvestments(); err != nil {
-		log.Printf("Error loading investments: %v", err)
+	// Changed from loadInvestments to loadPortfolios
+	if err := loadPortfolios(); err != nil {
+		log.Printf("Error loading portfolios: %v", err)
 	}
 
 	// Get environment variables directly
@@ -207,12 +208,12 @@ func registerCommands(s *discordgo.Session) {
 		},
 		{
 			Name:        "setinvest",
-			Description: "Set investment amount and buy price",
+			Description: "Set an investment",
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type:         discordgo.ApplicationCommandOptionString,
-					Name:         "crypto",
-					Description:  "Cryptocurrency (e.g., avalanche-2)",
+					Name:         "symbol",
+					Description:  "Cryptocurrency symbol",
 					Required:     true,
 					Autocomplete: true,
 				},
@@ -224,12 +225,35 @@ func registerCommands(s *discordgo.Session) {
 				},
 				{
 					Type:        discordgo.ApplicationCommandOptionNumber,
-					Name:        "buy_price",
-					Description: "Price per coin when bought in USD",
+					Name:        "price",
+					Description: "Buy price per coin in USD",
 					Required:    true,
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "type",
+					Description: "Investment type (personal/collective)",
+					Required:    false,
+					Choices: []*discordgo.ApplicationCommandOptionChoice{
+						{
+							Name:  "Personal",
+							Value: "personal",
+						},
+						{
+							Name:  "Collective",
+							Value: "collective",
+						},
+					},
+				},
+				{
+					Type:        discordgo.ApplicationCommandOptionString,
+					Name:        "participants",
+					Description: "Mention participants for collective investment (required for collective)",
+					Required:    false,
 				},
 			},
 		},
+
 		{
 			Name:        "assets",
 			Description: "Check all assets value",
@@ -307,6 +331,7 @@ func handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.ApplicationCommandData().Name != "price" &&
 		i.ApplicationCommandData().Name != "add" &&
 		i.ApplicationCommandData().Name != "setinvest" &&
+		i.ApplicationCommandData().Name != "removeinvest" &&
 		i.ApplicationCommandData().Name != "setalert" {
 		return
 	}

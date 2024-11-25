@@ -1,0 +1,113 @@
+{
+  "1310534578926256172": {
+    "user_id": "1310534578926256172",
+    "investments": {
+      "worldcoin-wld": {
+        "amount": 100,
+        "symbol": "worldcoin-wld",
+        "buy_price": 2,
+        "type": "collective",
+        "participants": [
+          "1310534578926256172"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T17:22:38.244648+07:00"
+      }
+    }
+  },
+  "602510288020832274": {
+    "user_id": "602510288020832274",
+    "investments": {
+      "avail": {
+        "amount": 522.15,
+        "symbol": "avail",
+        "buy_price": 0.1117,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:52:01.64805+07:00"
+      },
+      "worldcoin-wld": {
+        "amount": 27.4,
+        "symbol": "worldcoin-wld",
+        "buy_price": 2.119,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:51:21.760509+07:00"
+      }
+    }
+  },
+  "609418495930662912": {
+    "user_id": "609418495930662912",
+    "investments": {
+      "avail": {
+        "amount": 522.15,
+        "symbol": "avail",
+        "buy_price": 0.1117,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:52:01.64805+07:00"
+      },
+      "worldcoin-wld": {
+        "amount": 27.4,
+        "symbol": "worldcoin-wld",
+        "buy_price": 2.119,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:51:21.760509+07:00"
+      }
+    }
+  },
+  "692546896622780477": {
+    "user_id": "692546896622780477",
+    "investments": {
+      "avail": {
+        "amount": 522.15,
+        "symbol": "avail",
+        "buy_price": 0.1117,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:52:01.64805+07:00"
+      },
+      "bitcoin": {
+        "amount": 2,
+        "symbol": "bitcoin",
+        "buy_price": 2000,
+        "type": "personal",
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:59:11.836339+07:00"
+      },
+      "worldcoin-wld": {
+        "amount": 27.4,
+        "symbol": "worldcoin-wld",
+        "buy_price": 2.119,
+        "type": "collective",
+        "participants": [
+          "602510288020832274",
+          "609418495930662912"
+        ],
+        "created_by": "692546896622780477",
+        "created_at": "2024-11-25T20:51:21.760509+07:00"
+      }
+    }
+  }
+}
