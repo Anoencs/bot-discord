@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,33 +21,23 @@ var (
 )
 
 type Investment struct {
-	Amount       float64   `json:"amount"`
-	Symbol       string    `json:"symbol"`
-	BuyPrice     float64   `json:"buy_price"`
-	Type         string    `json:"type"`                   // "personal" or "collective"
-	Participants []string  `json:"participants,omitempty"` // List of user IDs for collective investments
-	CreatedBy    string    `json:"created_by"`
-	CreatedAt    time.Time `json:"created_at"`
+	Symbol       string     `json:"symbol"`
+	Type         string     `json:"type"`                   // "personal" or "collective"
+	Participants []string   `json:"participants,omitempty"` // List of user IDs for collective investments
+	Entries      []DCAEntry `json:"entries"`
+	CreatedBy    string     `json:"created_by"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type DCAEntry struct {
+	Amount    float64   `json:"amount"`
+	BuyPrice  float64   `json:"buy_price"`
+	EntryDate time.Time `json:"entry_date"`
 }
 
 type Portfolio struct {
 	UserID      string                 `json:"user_id"`
 	Investments map[string]*Investment `json:"investments"`
-}
-
-func formatParticipants(s *discordgo.Session, participants []string) string {
-	var names []string
-	for _, userID := range participants {
-		if user, err := s.User(userID); err == nil {
-			names = append(names, user.Username)
-		} else {
-			names = append(names, userID)
-		}
-	}
-	if len(names) == 0 {
-		return "No participants"
-	}
-	return strings.Join(names, ", ")
 }
 
 // Load portfolios from file
@@ -109,11 +101,8 @@ func handleSetInvestCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		case "type":
 			investType = strings.ToLower(opt.StringValue())
 		case "participants":
-			// Split the mentions string by spaces
 			mentionsStr := opt.StringValue()
 			mentions := strings.Fields(mentionsStr)
-
-			// Process each mention
 			for _, mention := range mentions {
 				userID := strings.Trim(mention, "<@!> ")
 				if userID != "" {
@@ -125,23 +114,6 @@ func handleSetInvestCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 			}
 		}
 	}
-	var participantNames []string
-	for _, userID := range participants {
-		if user, err := s.User(userID); err == nil {
-			participantNames = append(participantNames, user.Username)
-		}
-	}
-
-	// For collective investments, require participants
-	if investType == "collective" && len(participants) == 0 {
-		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseChannelMessageWithSource,
-			Data: &discordgo.InteractionResponseData{
-				Content: "Collective investments require at least one participant. Please mention the participants.",
-			},
-		})
-		return
-	}
 
 	userID := i.Member.User.ID
 	geckoID := symbol
@@ -150,30 +122,42 @@ func handleSetInvestCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		geckoID = strings.TrimSpace(strings.TrimRight(parts[1], ")"))
 	}
 
-	// Create investment entry
-	investment := &Investment{
-		Amount:    amount,
-		Symbol:    geckoID,
-		BuyPrice:  buyPrice,
-		Type:      investType,
-		CreatedBy: userID,
-		CreatedAt: time.Now(),
-	}
-
-	if investType == "collective" {
-		investment.Participants = participants
-	}
-
-	// Save to creator's portfolio
 	portfolio := getOrCreatePortfolio(userID)
-	portfolio.Investments[geckoID] = investment
 
-	// For collective investments, create reference in participants' portfolios
+	// Create new DCA entry
+	newEntry := DCAEntry{
+		Amount:    amount,
+		BuyPrice:  buyPrice,
+		EntryDate: time.Now(),
+	}
+
+	// Check if investment already exists
+	if existing, exists := portfolio.Investments[geckoID]; exists {
+		// Add new entry to existing investment
+		existing.Entries = append(existing.Entries, newEntry)
+	} else {
+		// Create new investment with first entry
+		investment := &Investment{
+			Symbol:    geckoID,
+			Type:      investType,
+			CreatedBy: userID,
+			CreatedAt: time.Now(),
+			Entries:   []DCAEntry{newEntry},
+		}
+
+		if investType == "collective" {
+			investment.Participants = participants
+		}
+
+		portfolio.Investments[geckoID] = investment
+	}
+
+	// Handle collective investments
 	if investType == "collective" {
 		for _, participantID := range participants {
-			if participantID != userID { // Skip creator as they already have it
+			if participantID != userID {
 				partPortfolio := getOrCreatePortfolio(participantID)
-				partPortfolio.Investments[geckoID] = investment
+				partPortfolio.Investments[geckoID] = portfolio.Investments[geckoID]
 			}
 		}
 	}
@@ -182,21 +166,24 @@ func handleSetInvestCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 		log.Printf("Error saving portfolios: %v", err)
 	}
 
-	// Create response message
+	// Create response message with DCA information
+	investment := portfolio.Investments[geckoID]
+	avgBuyPrice := calculateAverageBuyPrice(investment.Entries)
+	totalAmount := calculateTotalAmount(investment.Entries)
+
 	var response string
 	if investType == "collective" {
-		participantsStr := "No participants"
-		if len(participantNames) > 0 {
-			participantsStr = strings.Join(participantNames, ", ")
-		}
-		response = fmt.Sprintf("Collective investment set: %.4f %s at $%.2f per coin\nParticipants: %s",
-			amount, strings.ToUpper(geckoID), buyPrice, participantsStr)
+		participantsStr := formatParticipants(s, participants)
+		response = fmt.Sprintf("Added to collective investment: %.4f %s at $%.2f per coin\n"+
+			"Total Amount: %.4f\nAverage Buy Price: $%.2f\nParticipants: %s",
+			amount, strings.ToUpper(geckoID), buyPrice, totalAmount, avgBuyPrice, participantsStr)
 	} else {
-		response = fmt.Sprintf("Personal investment set: %.4f %s at $%.2f per coin",
-			amount, strings.ToUpper(geckoID), buyPrice)
+		response = fmt.Sprintf("Added to personal investment: %.4f %s at $%.2f per coin\n"+
+			"Total Amount: %.4f\nAverage Buy Price: $%.2f",
+			amount, strings.ToUpper(geckoID), buyPrice, totalAmount, avgBuyPrice)
 	}
 
-	interactResp := &discordgo.InteractionResponse{
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
 			Content: response,
@@ -207,8 +194,7 @@ func handleSetInvestCommand(s *discordgo.Session, i *discordgo.InteractionCreate
 				return 0
 			}(),
 		},
-	}
-	s.InteractionRespond(i.Interaction, interactResp)
+	})
 }
 func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	requestingUserID := i.Member.User.ID
@@ -290,7 +276,27 @@ func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		}
 
 	default:
-		// Send public collective investments message first (visible to everyone except command caller)
+		completePortfolio := make(map[string]*Investment)
+		// Add all personal investments
+		for k, v := range personalInvestments {
+			completePortfolio[k] = v
+		}
+		// Add all collective investments
+		for k, v := range visibleCollectiveInvestments {
+			completePortfolio[k] = v
+		}
+
+		if len(completePortfolio) == 0 {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Content: "You don't have any investments yet.",
+					Flags:   discordgo.MessageFlagsEphemeral,
+				},
+			})
+			return
+		}
+
 		if len(visibleCollectiveInvestments) > 0 {
 			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 				Type: discordgo.InteractionResponseChannelMessageWithSource,
@@ -302,29 +308,25 @@ func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				log.Printf("Error sending collective investments: %v", err)
 				return
 			}
-		}
 
-		// Send private complete portfolio only to the command caller
-		// Regardless of whether they have collective investments or not
-		completePortfolio := make(map[string]*Investment)
-		// Add all personal investments
-		for k, v := range personalInvestments {
-			completePortfolio[k] = v
-		}
-		// Add all collective investments
-		for k, v := range visibleCollectiveInvestments {
-			completePortfolio[k] = v
-		}
-
-		// Only send the follow-up message if there are any investments to show
-		if len(completePortfolio) > 0 {
-			_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-				Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, completePortfolio, "Complete", i.Member.User.Username)},
-				Flags:  discordgo.MessageFlagsEphemeral,
-			})
-			if err != nil {
-				log.Printf("Error sending complete portfolio: %v", err)
+			// If there are collective investments, send complete portfolio as followup
+			if len(completePortfolio) > 0 {
+				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, completePortfolio, "Complete", i.Member.User.Username)},
+					Flags:  discordgo.MessageFlagsEphemeral,
+				})
+				if err != nil {
+					log.Printf("Error sending complete portfolio: %v", err)
+				}
 			}
+		} else {
+			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseChannelMessageWithSource,
+				Data: &discordgo.InteractionResponseData{
+					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, completePortfolio, "Personal", i.Member.User.Username)},
+					Flags:  discordgo.MessageFlagsEphemeral,
+				},
+			})
 		}
 	}
 }
@@ -332,26 +334,19 @@ func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 func createPortfolioEmbed(s *discordgo.Session, investments map[string]*Investment, portfolioType string, username string) *discordgo.MessageEmbed {
 	var fields []*discordgo.MessageEmbedField
 	var totalValue, totalCost float64
-	// Collect all unique participants
-	uniqueParticipants := make(map[string]bool)
-	if portfolioType == "Collective" {
-		for _, inv := range investments {
-			if inv.Type == "collective" {
-				// Add creator
-				uniqueParticipants[inv.CreatedBy] = true
-				// Add participants
-				for _, participantID := range inv.Participants {
-					uniqueParticipants[participantID] = true
-				}
-			}
-		}
-	}
-	// Create mentions string
-	var mentions []string
-	for userID := range uniqueParticipants {
-		mentions = append(mentions, fmt.Sprintf("<@%s>", userID))
+
+	type performanceData struct {
+		symbol       string
+		amount       float64
+		profitLoss   float64
+		percentage   float64
+		currentValue float64
+		buyValue     float64
 	}
 
+	var performances []performanceData
+
+	// Process each investment with high precision
 	for _, inv := range investments {
 		price, err := getCryptoPrice(inv.Symbol)
 		if err != nil {
@@ -359,49 +354,81 @@ func createPortfolioEmbed(s *discordgo.Session, investments map[string]*Investme
 			continue
 		}
 
-		currentValue := price.Price * inv.Amount
-		initialCost := inv.BuyPrice * inv.Amount
-		profitLoss := currentValue - initialCost
-		profitLossPercent := (profitLoss / initialCost) * 100
+		totalAmount := calculateTotalAmount(inv.Entries)
+		avgBuyPrice := calculateAverageBuyPrice(inv.Entries)
 
-		totalValue += currentValue
-		totalCost += initialCost
+		// Calculate values with high precision
+		currentValue := math.Round(price.Price*totalAmount*100000000) / 100000000
+		totalInvestment := 0.0
 
-		var description string
+		for _, entry := range inv.Entries {
+			entryInvestment := math.Round(entry.Amount*entry.BuyPrice*100000000) / 100000000
+			totalInvestment += entryInvestment
+		}
+
+		profitLoss := math.Round((currentValue-totalInvestment)*100000000) / 100000000
+		profitLossPercent := 0.0
+		if totalInvestment > 0 {
+			profitLossPercent = math.Round((profitLoss/totalInvestment)*10000) / 10000 * 100
+		}
+
+		// Accumulate totals with high precision
+		totalValue = math.Round((totalValue+currentValue)*100000000) / 100000000
+		totalCost = math.Round((totalCost+totalInvestment)*100000000) / 100000000
+
+		// Build entries detail with enhanced precision
+		var entriesDetail strings.Builder
+		if len(inv.Entries) > 0 {
+			entriesDetail.WriteString("\nEntries:")
+			for i, entry := range inv.Entries {
+				entryValue := math.Round(price.Price*entry.Amount*100000000) / 100000000
+				entryInvestment := math.Round(entry.Amount*entry.BuyPrice*100000000) / 100000000
+				entryPL := math.Round((entryValue-entryInvestment)*100000000) / 100000000
+				entryPLPercent := 0.0
+				if entryInvestment > 0 {
+					entryPLPercent = math.Round((entryPL/entryInvestment)*10000) / 10000 * 100
+				}
+
+				entriesDetail.WriteString(fmt.Sprintf("\n%d. %s @ %s (%s) | P/L: %s (%s)",
+					i+1,
+					formatCryptoAmount(entry.Amount),
+					formatFiatPrice(entry.BuyPrice),
+					entry.EntryDate.Format("2006-01-02"),
+					formatFiatAmount(entryPL),
+					formatPercentage(entryPLPercent)))
+			}
+		}
+
+		// Store performance data for summary
+		performances = append(performances, performanceData{
+			symbol:       inv.Symbol,
+			amount:       totalAmount,
+			profitLoss:   profitLoss,
+			percentage:   profitLossPercent,
+			currentValue: currentValue,
+			buyValue:     totalInvestment,
+		})
+
+		description := fmt.Sprintf(
+			"Total Amount: %s\n"+
+				"Avg Buy Price: %s\n"+
+				"Current Price: %s\n"+
+				"Total Investment: %s\n"+
+				"Current Value: %s\n"+
+				"Total P/L: %s (%s)%s",
+			formatCryptoAmount(totalAmount),
+			formatFiatPrice(avgBuyPrice),
+			formatFiatPrice(price.Price),
+			formatFiatAmount(totalInvestment),
+			formatFiatAmount(currentValue),
+			formatFiatAmount(profitLoss),
+			formatPercentage(profitLossPercent),
+			entriesDetail.String())
+
 		if inv.Type == "collective" {
-			description = fmt.Sprintf(
-				"Amount: %.4f\n"+
-					"Buy Price: $%.2f\n"+
-					"Current Price: $%.2f\n"+
-					"Value: $%.2f\n"+
-					"P/L: $%.2f (%.2f%%)\n"+
-					"Participants: %s\n"+
-					"Created by: <@%s>\n"+
-					"Created at: %s",
-				inv.Amount,
-				inv.BuyPrice,
-				price.Price,
-				currentValue,
-				profitLoss,
-				profitLossPercent,
+			description += fmt.Sprintf("\n\nParticipants: %s\nCreated by: <@%s>",
 				formatParticipants(s, inv.Participants),
-				inv.CreatedBy,
-				inv.CreatedAt.Format("2006-01-02 15:04:05"),
-			)
-		} else {
-			description = fmt.Sprintf(
-				"Amount: %.4f\n"+
-					"Buy Price: $%.2f\n"+
-					"Current Price: $%.2f\n"+
-					"Value: $%.2f\n"+
-					"P/L: $%.2f (%.2f%%)",
-				inv.Amount,
-				inv.BuyPrice,
-				price.Price,
-				currentValue,
-				profitLoss,
-				profitLossPercent,
-			)
+				inv.CreatedBy)
 		}
 
 		fields = append(fields, &discordgo.MessageEmbedField{
@@ -411,24 +438,62 @@ func createPortfolioEmbed(s *discordgo.Session, investments map[string]*Investme
 		})
 	}
 
-	// Add summary field
-	totalPL := totalValue - totalCost
+	// Calculate portfolio summary with high precision
+	totalPL := math.Round((totalValue-totalCost)*100000000) / 100000000
 	totalPLPercent := 0.0
 	if totalCost > 0 {
-		totalPLPercent = (totalPL / totalCost) * 100
+		totalPLPercent = math.Round((totalPL/totalCost)*10000) / 10000 * 100
+	}
+
+	// Sort performances by percentage
+	sort.Slice(performances, func(i, j int) bool {
+		return performances[i].percentage > performances[j].percentage
+	})
+
+	var summaryBuilder strings.Builder
+	summaryBuilder.WriteString(fmt.Sprintf("Total Investment: %s\n", formatFiatAmount(totalCost)))
+	summaryBuilder.WriteString(fmt.Sprintf("Current Value: %s\n", formatFiatAmount(totalValue)))
+	summaryBuilder.WriteString(fmt.Sprintf("Total P/L: %s (%s)\n",
+		formatFiatAmount(totalPL),
+		formatPercentage(totalPLPercent)))
+
+	// Only show performers when we have more than 2 coins
+	if len(performances) > 2 {
+		summaryBuilder.WriteString("\nBest Performers:\n")
+		for i := 0; i < min(3, len(performances)); i++ {
+			p := performances[i]
+			summaryBuilder.WriteString(fmt.Sprintf("%s: %s (%s)\n",
+				strings.ToUpper(p.symbol),
+				formatPercentage(p.percentage),
+				formatFiatAmount(p.profitLoss)))
+		}
+
+		summaryBuilder.WriteString("\nWorst Performers:\n")
+		for i := len(performances) - 1; i >= max(0, len(performances)-3); i-- {
+			p := performances[i]
+			summaryBuilder.WriteString(fmt.Sprintf("%s: %s (%s)\n",
+				strings.ToUpper(p.symbol),
+				formatPercentage(p.percentage),
+				formatFiatAmount(p.profitLoss)))
+		}
+	}
+
+	// Always show portfolio allocation
+	summaryBuilder.WriteString("\nPortfolio Allocation:\n")
+	for _, p := range performances {
+		allocation := 0.0
+		if totalValue > 0 {
+			allocation = math.Round((p.currentValue/totalValue)*10000) / 10000 * 100
+		}
+		summaryBuilder.WriteString(fmt.Sprintf("%s: %s (%s)\n",
+			strings.ToUpper(p.symbol),
+			formatPercentage(allocation),
+			formatCryptoAmount(p.amount)))
 	}
 
 	fields = append(fields, &discordgo.MessageEmbedField{
-		Name: fmt.Sprintf("%s Portfolio Summary", portfolioType),
-		Value: fmt.Sprintf(
-			"Total Cost: $%.2f\n"+
-				"Total Value: $%.2f\n"+
-				"Total P/L: $%.2f (%.2f%%)",
-			totalCost,
-			totalValue,
-			totalPL,
-			totalPLPercent,
-		),
+		Name:   fmt.Sprintf("%s Portfolio Summary", portfolioType),
+		Value:  summaryBuilder.String(),
 		Inline: false,
 	})
 
@@ -436,17 +501,11 @@ func createPortfolioEmbed(s *discordgo.Session, investments map[string]*Investme
 	if totalPL >= 0 {
 		embedColor = 0x00FF00 // Green for profit
 	}
-	var description string
-	if portfolioType == "Collective" && len(mentions) > 0 {
-		description = fmt.Sprintf("Hey %s! Check out our collective investments!",
-			strings.Join(mentions, " "))
-	}
 
 	return &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("%s Portfolio for %s", portfolioType, username),
-		Description: description,
-		Color:       embedColor,
-		Fields:      fields,
+		Title:  fmt.Sprintf("%s Portfolio for %s", portfolioType, username),
+		Color:  embedColor,
+		Fields: fields,
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: time.Now().Format("2006-01-02 15:04:05 MST"),
 		},
