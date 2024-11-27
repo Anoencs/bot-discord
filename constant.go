@@ -221,3 +221,39 @@ var convertToCMCSymbolMap = map[string]string{
 	"avail":            "avail",
 	"strk":             "strk",
 }
+
+// Default Discord channels của các sàn giao dịch lớn
+var defaultExchanges = map[string]string{
+	"Binance": "858526562822766643",  // Binance Announcement
+	"OKX":     "937116603535949834",  // OKX Announcement
+	"ByBit":   "1051412510572650506", // ByBit Announcement
+	"MEXC":    "905148827783811072",  // MEXC Announcement
+}
+
+// Default Discord channels của các blockchain platform
+var defaultPlatforms = map[string]string{
+	"Arbitrum":  "824043563609989161",  // Arbitrum Announcement
+	"Optimism":  "667044843901681675",  // Optimism Announcement
+	"Base":      "1020660671286001664", // Base Announcement
+	"Avalanche": "877114547651297280",  // Avalanche Announcement
+	"Polygon":   "901828723748962315",  // Polygon Announcement
+	"zkSync":    "937847572644810782",  // zkSync Announcement
+	"Sei":       "973057323117199370",  // Sei Network Announcement
+	"Injective": "908001674169462794",  // Injective Announcement
+}
+
+// Default Discord channels của các Launchpad
+var defaultLaunchpads = map[string]string{
+	"PinkSale": "878625251799785512", // PinkSale Announcement
+	"DxSale":   "887248835952123904", // DxSale Announcement
+	"Pinksale": "878625251799785512", // Pinksale Announcement
+	"Gamefi":   "889346756603826218", // Gamefi.org Announcement
+}
+
+// Default Discord channels của các Alpha Groups
+var defaultAlphaGroups = map[string]string{
+	"Early BSC":   "908633314149785610", // Early BSC Calls
+	"BSC Alpha":   "915467223846527006", // BSC Alpha Calls
+	"Degen":       "925475246210240552", // Degen Calls
+	"Alpha Calls": "937847966227591218", // Alpha Calls
+}

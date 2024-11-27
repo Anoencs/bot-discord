@@ -42,6 +42,10 @@ var (
 	SANTIMENT_API_KEY     string
 )
 
+var (
+	discord *discordgo.Session
+)
+
 func init() {
 	// In production (Railway), env vars are already set in the environment
 	// Only try to load .env file during local development
@@ -49,6 +53,12 @@ func init() {
 		if err := godotenv.Load(); err != nil {
 			log.Printf("Warning: Error loading .env file (this is normal in production): %v", err)
 		}
+	}
+	var err error
+	discord, err = discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
+	if err != nil {
+		log.Fatal("Error creating Discord session:", err)
+		return
 	}
 
 	// Changed from loadInvestments to loadPortfolios
@@ -72,14 +82,11 @@ func init() {
 			ClientID: strings.TrimSpace(clientIDs[i]),
 		})
 	}
+
+	InitAirdropMonitor(discord)
 }
 
 func main() {
-	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
-	if err != nil {
-		log.Fatal("Error creating Discord session:", err)
-		return
-	}
 	alertBot.Session = discord
 
 	discord.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
@@ -88,9 +95,10 @@ func main() {
 	})
 
 	discord.AddHandler(interactionHandler)
+	discord.AddHandler(handleAirdropMessage)
 	discord.Identify.Intents = discordgo.IntentsGuildMembers | discordgo.IntentsGuilds
 
-	err = discord.Open()
+	err := discord.Open()
 	if err != nil {
 		log.Fatal("Error opening connection:", err)
 		return
@@ -271,6 +279,8 @@ func registerCommands(s *discordgo.Session) {
 				},
 			},
 		},
+		// airdrop
+		GetAirdropCommands(),
 	}
 
 	for _, cmd := range commands {
@@ -304,11 +314,11 @@ func handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			handleHelpCommand(s, i)
 		case "invite":
 			handleInviteCommand(s, i)
-		case "setalert": // Add this case
+		case "setalert":
 			handleSetAlert(s, i)
-		case "removealert": // Add this case
+		case "removealert":
 			handleRemoveAlert(s, i)
-		case "listalerts": // Add this case
+		case "listalerts":
 			handleListAlerts(s, i)
 		case "setinvest":
 			handleSetInvestCommand(s, i)
@@ -320,6 +330,8 @@ func handleSlashCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 			handleRestartCommand(s, i)
 		case "clear-bot":
 			handleClearCommand(s, i)
+		case "airdrop":
+			handleAirdropCommands(s, i)
 		}
 
 	case discordgo.InteractionApplicationCommandAutocomplete:
