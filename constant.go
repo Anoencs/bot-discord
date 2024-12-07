@@ -155,7 +155,7 @@ var commonCryptos = map[string]CryptoInfo{
 	"huobi-token": {Symbol: "HT", GeckoID: "huobi-token"},
 	"wazirx":      {Symbol: "WRX", GeckoID: "wazirx"},
 	"mx-token":    {Symbol: "MX", GeckoID: "mx-token"},
-	"meme":        {Symbol: "MEME", GeckoID: "meme"},
+	"meme":        {Symbol: "MEME", GeckoID: "memecoin-2"},
 }
 
 var convertToBinanceSymbolMap = map[string]string{
