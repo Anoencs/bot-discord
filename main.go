@@ -43,20 +43,24 @@ var (
 )
 
 func init() {
-	// In production (Railway), env vars are already set in the environment
-	// Only try to load .env file during local development
+	// Load environment variables
 	if os.Getenv("RAILWAY_ENVIRONMENT") == "" {
 		if err := godotenv.Load(); err != nil {
 			log.Printf("Warning: Error loading .env file (this is normal in production): %v", err)
 		}
 	}
 
-	// Changed from loadInvestments to loadPortfolios
+	// Connect to MongoDB first
+	if err := connectDB(); err != nil {
+		log.Fatalf("Failed to connect to MongoDB: %v", err)
+	}
+
+	// Load portfolios
 	if err := loadPortfolios(); err != nil {
 		log.Printf("Error loading portfolios: %v", err)
 	}
 
-	// Get environment variables directly
+	// Get environment variables
 	tokens := strings.Split(os.Getenv("BOT_TOKENS"), ",")
 	clientIDs := strings.Split(os.Getenv("BOT_CLIENT_IDS"), ",")
 	COINMARKETCAP_API_KEY = os.Getenv("COINMARKETCAP_API_KEY")
@@ -75,6 +79,9 @@ func init() {
 }
 
 func main() {
+	// Add cleanup for MongoDB
+	defer disconnectDB()
+
 	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
 	if err != nil {
 		log.Fatal("Error creating Discord session:", err)

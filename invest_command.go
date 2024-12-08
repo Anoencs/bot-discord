@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -45,15 +43,12 @@ func loadPortfolios() error {
 	portMutex.Lock()
 	defer portMutex.Unlock()
 
-	data, err := os.ReadFile(saveFile)
+	err := loadPortfoliosFromDB()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
+		return fmt.Errorf("failed to load portfolios from DB: %v", err)
 	}
 
-	return json.Unmarshal(data, &portfolios)
+	return nil
 }
 
 // Save portfolios to file
@@ -61,12 +56,12 @@ func savePortfolios() error {
 	portMutex.RLock()
 	defer portMutex.RUnlock()
 
-	data, err := json.MarshalIndent(portfolios, "", "  ")
-	if err != nil {
-		return err
+	for _, portfolio := range portfolios {
+		if err := savePortfolioToDB(portfolio); err != nil {
+			return err
+		}
 	}
-
-	return os.WriteFile(saveFile, data, 0644)
+	return nil
 }
 
 // Hàm helper để lấy hoặc tạo portfolio cho user
@@ -204,130 +199,127 @@ func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		filterType = strings.ToLower(i.ApplicationCommandData().Options[0].StringValue())
 	}
 
+	// Get investments with a single pass through the data
+	investments := gatherInvestments(requestingUserID, filterType)
+
+	// Handle empty portfolio case
+	if len(investments) == 0 {
+		respondWithEmptyPortfolio(s, i, filterType)
+		return
+	}
+
+	// Send appropriate response based on filter type
+	switch filterType {
+	case "personal":
+		sendPortfolioResponse(s, i, investments, "Personal", i.Member.User.Username, true)
+	case "collective":
+		sendPortfolioResponse(s, i, investments, "Collective", i.Member.User.Username, false)
+	default:
+		sendPortfolioResponse(s, i, investments, "Complete", i.Member.User.Username, false)
+	}
+}
+
+// Helper function to gather investments efficiently
+func gatherInvestments(userID, filterType string) map[string]*Investment {
 	portMutex.RLock()
 	defer portMutex.RUnlock()
 
-	// Get all visible collective investments
-	visibleCollectiveInvestments := make(map[string]*Investment)
-	for _, p := range portfolios {
-		for symbol, inv := range p.Investments {
-			if inv.Type == "collective" {
-				isParticipant := false
-				for _, participantID := range inv.Participants {
-					if participantID == requestingUserID {
-						isParticipant = true
-						break
-					}
-				}
-				if isParticipant || inv.CreatedBy == requestingUserID {
-					visibleCollectiveInvestments[symbol] = inv
-				}
-			}
-		}
+	result := make(map[string]*Investment)
+
+	// Get user's portfolio
+	portfolio, exists := portfolios[userID]
+	if !exists {
+		return result
 	}
 
-	// Get personal investments of the requesting user
-	personalInvestments := make(map[string]*Investment)
-	if portfolio, exists := portfolios[requestingUserID]; exists {
-		for symbol, inv := range portfolio.Investments {
-			if inv.Type == "personal" && inv.CreatedBy == requestingUserID {
-				personalInvestments[symbol] = inv
-			}
-		}
-	}
-
+	// Filter investments based on type
 	switch filterType {
 	case "personal":
-		// Handle personal filter...
-		if len(personalInvestments) > 0 {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Flags:  discordgo.MessageFlagsEphemeral,
-					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, personalInvestments, "Personal", i.Member.User.Username)},
-				},
-			})
-		} else {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "You have no personal investments.",
-					Flags:   discordgo.MessageFlagsEphemeral,
-				},
-			})
-		}
-
-	case "collective":
-		// Handle collective filter...
-		if len(visibleCollectiveInvestments) > 0 {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, visibleCollectiveInvestments, "Collective", i.Member.User.Username)},
-				},
-			})
-		} else {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "You have no collective investments.",
-				},
-			})
-		}
-
-	default:
-		completePortfolio := make(map[string]*Investment)
-		// Add all personal investments
-		for k, v := range personalInvestments {
-			completePortfolio[k] = v
-		}
-		// Add all collective investments
-		for k, v := range visibleCollectiveInvestments {
-			completePortfolio[k] = v
-		}
-
-		if len(completePortfolio) == 0 {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Content: "You don't have any investments yet.",
-					Flags:   discordgo.MessageFlagsEphemeral,
-				},
-			})
-			return
-		}
-
-		if len(visibleCollectiveInvestments) > 0 {
-			err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, visibleCollectiveInvestments, "Collective", i.Member.User.Username)},
-				},
-			})
-			if err != nil {
-				log.Printf("Error sending collective investments: %v", err)
-				return
+		for symbol, inv := range portfolio.Investments {
+			if inv.Type == "personal" && inv.CreatedBy == userID {
+				result[symbol] = inv
 			}
-
-			// If there are collective investments, send complete portfolio as followup
-			if len(completePortfolio) > 0 {
-				_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
-					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, completePortfolio, "Complete", i.Member.User.Username)},
-					Flags:  discordgo.MessageFlagsEphemeral,
-				})
-				if err != nil {
-					log.Printf("Error sending complete portfolio: %v", err)
+		}
+	case "collective":
+		// Gather all visible collective investments
+		for _, p := range portfolios {
+			for symbol, inv := range p.Investments {
+				if inv.Type == "collective" && (isParticipant(inv, userID) || inv.CreatedBy == userID) {
+					result[symbol] = inv
 				}
 			}
-		} else {
-			s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionResponseChannelMessageWithSource,
-				Data: &discordgo.InteractionResponseData{
-					Embeds: []*discordgo.MessageEmbed{createPortfolioEmbed(s, completePortfolio, "Personal", i.Member.User.Username)},
-					Flags:  discordgo.MessageFlagsEphemeral,
-				},
-			})
 		}
+	default:
+		// Gather all investments
+		for symbol, inv := range portfolio.Investments {
+			if inv.Type == "personal" && inv.CreatedBy == userID {
+				result[symbol] = inv
+			}
+		}
+		// Add collective investments
+		for _, p := range portfolios {
+			for symbol, inv := range p.Investments {
+				if inv.Type == "collective" && (isParticipant(inv, userID) || inv.CreatedBy == userID) {
+					result[symbol] = inv
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// Helper function to check if user is a participant
+func isParticipant(inv *Investment, userID string) bool {
+	for _, participantID := range inv.Participants {
+		if participantID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper function to send portfolio response
+func sendPortfolioResponse(s *discordgo.Session, i *discordgo.InteractionCreate, investments map[string]*Investment, portfolioType string, username string, ephemeral bool) {
+	embed := createPortfolioEmbed(s, investments, portfolioType, username)
+
+	flags := discordgo.MessageFlags(0)
+	if ephemeral {
+		flags = discordgo.MessageFlagsEphemeral
+	}
+
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: []*discordgo.MessageEmbed{embed},
+			Flags:  flags,
+		},
+	})
+
+	if err != nil {
+		log.Printf("Error sending portfolio response: %v", err)
+	}
+}
+
+// Helper function to handle empty portfolio response
+func respondWithEmptyPortfolio(s *discordgo.Session, i *discordgo.InteractionCreate, filterType string) {
+	message := "You don't have any investments yet."
+	if filterType == "personal" {
+		message = "You have no personal investments."
+	} else if filterType == "collective" {
+		message = "You have no collective investments."
+	}
+
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: message,
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	})
+
+	if err != nil {
+		log.Printf("Error sending empty portfolio response: %v", err)
 	}
 }
 

@@ -150,30 +150,24 @@ func getPriceFromCoinMarketCap(id string) (*CryptoPrice, error) {
 }
 
 func getCryptoPrice(id string) (*CryptoPrice, error) {
-	// Try CoinGecko first
-	price, err := getPriceFromCoinGecko(id)
-	if err == nil {
+	price, err1 := getPriceFromCoinGecko(id)
+	if err1 == nil {
 		return price, nil
 	}
 
-	// If CoinGecko fails with rate limit, try CoinMarketCap
-	if strings.Contains(err.Error(), "rate limit exceeded") {
-		price, err = getPriceFromCoinMarketCap(id)
-		if err == nil {
-			return price, nil
-		}
+	price, err2 := getPriceFromBinance(id)
+	if err2 == nil {
+		return price, nil
 	}
 
-	// If CoinMarketCap fails, try Binance
-	if strings.Contains(err.Error(), "rate limit exceeded") {
-		price, err = getPriceFromBinance(id)
-		if err == nil {
-			return price, nil
-		}
+	price, err3 := getPriceFromCoinMarketCap(id)
+	if err3 == nil {
+		return price, nil
 	}
 
-	// If all APIs fail, return the original error
-	return nil, err
+	// If all APIs fail, return combined error message
+	return nil, fmt.Errorf("all APIs failed: CoinGecko: %v, Binance: %v, CoinMarketCap: %v",
+		err1, err2, err3)
 }
 func getSantimentData(symbol string) (string, error) {
 	apiURL := "https://api.santiment.net/graphql"
