@@ -17,7 +17,7 @@ var (
 	mongoClient     *mongo.Client
 	database        *mongo.Database
 	portfoliosMutex sync.Mutex
-	userPortfolios  map[string]Portfolio
+	userPortfolios  map[string]*Portfolio
 )
 
 func connectDB() error {
@@ -89,7 +89,7 @@ func savePortfolioToDB(portfolio *Portfolio) error {
 	return err
 }
 
-func loadPortfoliosFromDB() error {
+func loadPortfoliosFromDB() (map[string]*Portfolio, error) {
 	log.Println("Starting to load portfolios from database...")
 
 	collection := getCollection("portfolios")
@@ -102,7 +102,7 @@ func loadPortfoliosFromDB() error {
 	// Find all documents
 	cursor, err := collection.Find(ctx, bson.M{})
 	if err != nil {
-		return fmt.Errorf("error finding portfolios: %v", err)
+		return nil, fmt.Errorf("error finding portfolios: %v", err)
 	}
 	defer cursor.Close(ctx)
 
@@ -116,7 +116,7 @@ func loadPortfoliosFromDB() error {
 
 	var portfolios []Portfolio
 	if err = cursor.All(ctx, &portfolios); err != nil {
-		return fmt.Errorf("error decoding portfolios: %v", err)
+		return nil, fmt.Errorf("error decoding portfolios: %v", err)
 	}
 
 	// Debug: Print each portfolio
@@ -128,17 +128,17 @@ func loadPortfoliosFromDB() error {
 	// Initialize the map if it hasn't been initialized yet
 	portfoliosMutex.Lock()
 	if userPortfolios == nil {
-		userPortfolios = make(map[string]Portfolio)
+		userPortfolios = make(map[string]*Portfolio)
 	}
 
 	// Clear existing portfolios before loading new ones
-	userPortfolios = make(map[string]Portfolio)
+	userPortfolios = make(map[string]*Portfolio)
 
 	for _, p := range portfolios {
-		userPortfolios[p.UserID] = p
+		userPortfolios[p.UserID] = &p
 	}
 	portfoliosMutex.Unlock()
 
 	log.Printf("Successfully loaded %d portfolios into memory", len(portfolios))
-	return nil
+	return userPortfolios, nil
 }

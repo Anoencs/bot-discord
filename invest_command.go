@@ -42,8 +42,9 @@ type Portfolio struct {
 func loadPortfolios() error {
 	portMutex.Lock()
 	defer portMutex.Unlock()
+	var err error
 
-	err := loadPortfoliosFromDB()
+	portfolios, err = loadPortfoliosFromDB()
 	if err != nil {
 		return fmt.Errorf("failed to load portfolios from DB: %v", err)
 	}
@@ -201,6 +202,8 @@ func handleAssetsCommand(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 	// Get investments with a single pass through the data
 	investments := gatherInvestments(requestingUserID, filterType)
+
+	fmt.Printf("data of investments gather: %+v", investments)
 
 	// Handle empty portfolio case
 	if len(investments) == 0 {
