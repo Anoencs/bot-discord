@@ -156,6 +156,7 @@ var commonCryptos = map[string]CryptoInfo{
 	"wazirx":      {Symbol: "WRX", GeckoID: "wazirx"},
 	"mx-token":    {Symbol: "MX", GeckoID: "mx-token"},
 	"memecoin-2":  {Symbol: "MEME", GeckoID: "memecoin-2"},
+	"aptos":       {Symbol: "APTOS", GeckoID: "aptos"},
 }
 
 var convertToBinanceSymbolMap = map[string]string{
@@ -189,6 +190,7 @@ var convertToBinanceSymbolMap = map[string]string{
 	"theta-token":      "THETAUSDT",
 	"strk":             "STRKUSDT",
 	"memecoin-2":       "MEMEUSDT",
+	"aptos":            "APTOSUSDT",
 }
 
 var convertToCMCSymbolMap = map[string]string{
@@ -223,4 +225,5 @@ var convertToCMCSymbolMap = map[string]string{
 	"avail":            "avail",
 	"strk":             "strk",
 	"memecoin-2":       "memecoin-2",
+	"aptos":            "aptos",
 }
